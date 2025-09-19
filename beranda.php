@@ -542,7 +542,8 @@ foreach ($maintenanceNotifications as $notification) {
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <!-- Chart.js -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.8.0/Chart.min.js" crossorigin="anonymous"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 
 <!-- Custom scripts for all pages-->
 <script src="js/sb-admin-2.min.js"></script>
@@ -561,101 +562,29 @@ foreach ($maintenanceNotifications as $notification) {
 </style>
 
 <script>
-    (function () {
-        const initializeDashboard = () => {
-            <?php if ($showAlert && $data_level === 'admin') : ?>
-                const hideAlert = getCookie('hidePeminjamanAlert');
-                const now = new Date().getTime();
-                if (!hideAlert || now > parseInt(hideAlert)) {
-                    Swal.fire({
-                        title: 'Peminjaman Belum Dikembalikan',
-                        html: 'Berikut adalah daftar peminjaman yang belum dikembalikan:<br><ul style="text-align: left;"><?php foreach ($peminjamanBelumKembali as $item) echo "<li>$item</li>"; ?></ul>',
-                        icon: 'warning',
-                        showCloseButton: true,
-                        showCancelButton: true,
-                        showConfirmButton: true,
-                        confirmButtonText: 'Lihat Peminjaman',
-                        cancelButtonText: 'Tutup',
-                        cancelButtonColor: '#d33',
-                        confirmButtonColor: '#3085d6',
-                        reverseButtons: true,
-                        showDenyButton: true,
-                        denyButtonText: 'Jangan Tampilkan (1 Jam)',
-                        denyButtonColor: '#6c757d',
-                        customClass: {
-                            popup: 'animated fadeInDown faster',
-                            content: 'text-left'
-                        },
-                        didOpen: () => {
-                            const confirmButton = Swal.getConfirmButton();
-                            const denyButton = Swal.getDenyButton();
-
-                            confirmButton.onclick = () => {
-                                window.location.href = 'peminjaman_barang.php';
-                            };
-
-                            denyButton.onclick = () => {
-                                const oneHourLater = now + (60 * 60 * 1000);
-                                document.cookie = "hidePeminjamanAlert=" + oneHourLater + "; path=/; max-age=" + (60 * 60);
-                                Swal.close();
-                            };
-                        }
-                    });
-                }
-            <?php endif; ?>
-
-            const unitLabels = <?php echo json_encode($unitChartLabels, JSON_UNESCAPED_UNICODE); ?>;
-            const unitData = <?php echo json_encode($unitChartValues); ?>;
-            const conditionLabels = <?php echo json_encode($conditionChartLabels, JSON_UNESCAPED_UNICODE); ?>;
-            const conditionData = <?php echo json_encode($conditionChartValues); ?>;
-            const mutasiBulananLabels = <?php echo json_encode($mutasiBulananLabels, JSON_UNESCAPED_UNICODE); ?>;
-            const mutasiBulananData = {
-                mutasi: <?php echo json_encode($mutasiBulananMutasi); ?>,
-                penghapusan: <?php echo json_encode($mutasiBulananPenghapusan); ?>
-            };
-
-            if (typeof Chart === 'undefined') {
-                return;
-            }
-
-            if (Chart.defaults && Chart.defaults.global) {
-                Chart.defaults.global.defaultFontFamily = 'Nunito';
-                Chart.defaults.global.defaultFontColor = '#858796';
-            }
-
-            window.dashboardCharts = window.dashboardCharts || {};
-
-            const createOrUpdateChart = (key, canvas, config) => {
-                if (!canvas) {
-                    return;
-                }
-
-                const context = canvas.getContext('2d');
-                if (!context) {
-                    return;
-                }
-
-                if (window.dashboardCharts[key]) {
-                    window.dashboardCharts[key].destroy();
-                }
-
-                window.dashboardCharts[key] = new Chart(context, config);
-            };
-
-            const unitCanvas = document.getElementById('unitDistributionChart');
-            if (unitCanvas && unitLabels.length) {
-                createOrUpdateChart('unitDistribution', unitCanvas, {
-                    type: 'bar',
-                    data: {
-                        labels: unitLabels,
-                        datasets: [{
-                            label: 'Total Inventaris',
-                            data: unitData,
-                            backgroundColor: '#4e73df',
-                            hoverBackgroundColor: '#2e59d9',
-                            borderColor: '#4e73df',
-                            borderWidth: 1
-                        }]
+    document.addEventListener('DOMContentLoaded', function() {
+        <?php if ($showAlert && $data_level === 'admin') : ?>
+            const hideAlert = getCookie('hidePeminjamanAlert');
+            const now = new Date().getTime();
+            if (!hideAlert || now > parseInt(hideAlert)) {
+                Swal.fire({
+                    title: 'Peminjaman Belum Dikembalikan',
+                    html: 'Berikut adalah daftar peminjaman yang belum dikembalikan:<br><ul style="text-align: left;"><?php foreach ($peminjamanBelumKembali as $item) echo "<li>$item</li>"; ?></ul>',
+                    icon: 'warning',
+                    showCloseButton: true,
+                    showCancelButton: true,
+                    showConfirmButton: true,
+                    confirmButtonText: 'Lihat Peminjaman',
+                    cancelButtonText: 'Tutup',
+                    cancelButtonColor: '#d33',
+                    confirmButtonColor: '#3085d6',
+                    reverseButtons: true,
+                    showDenyButton: true,
+                    denyButtonText: 'Jangan Tampilkan (1 Jam)',
+                    denyButtonColor: '#6c757d',
+                    customClass: {
+                        popup: 'animated fadeInDown faster',
+                        content: 'text-left'
                     },
                     options: {
                         maintainAspectRatio: false,
