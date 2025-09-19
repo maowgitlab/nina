@@ -602,142 +602,14 @@ foreach ($maintenanceNotifications as $notification) {
                     }
                 });
             }
-        <?php endif; ?>
+        });
 
-        const unitLabels = <?php echo json_encode($unitChartLabels, JSON_UNESCAPED_UNICODE); ?>;
-        const unitData = <?php echo json_encode($unitChartValues); ?>;
-        const conditionLabels = <?php echo json_encode($conditionChartLabels, JSON_UNESCAPED_UNICODE); ?>;
-        const conditionData = <?php echo json_encode($conditionChartValues); ?>;
-        const mutasiBulananLabels = <?php echo json_encode($mutasiBulananLabels, JSON_UNESCAPED_UNICODE); ?>;
-        const mutasiBulananData = {
-            mutasi: <?php echo json_encode($mutasiBulananMutasi); ?>,
-            penghapusan: <?php echo json_encode($mutasiBulananPenghapusan); ?>
-        };
-        const mutasiTahunanLabels = <?php echo json_encode($mutasiTahunanLabels, JSON_UNESCAPED_UNICODE); ?>;
-        const mutasiTahunanData = {
-            mutasi: <?php echo json_encode($mutasiTahunanMutasi); ?>,
-            penghapusan: <?php echo json_encode($mutasiTahunanPenghapusan); ?>
-        };
-
-        if (typeof Chart !== 'undefined') {
-            window.dashboardCharts = window.dashboardCharts || {};
-
-            const createOrUpdateChart = (key, canvas, config) => {
-                if (!canvas) {
-                    return;
-                }
-
-                const context = canvas.getContext('2d');
-                if (!context) {
-                    return;
-                }
-
-                if (window.dashboardCharts[key]) {
-                    window.dashboardCharts[key].destroy();
-                }
-
-                window.dashboardCharts[key] = new Chart(context, config);
-            };
-
-            const unitCanvas = document.getElementById('unitDistributionChart');
-            if (unitLabels.length) {
-                createOrUpdateChart('unitDistribution', unitCanvas, {
-                    type: 'bar',
-                    data: {
-                        labels: unitLabels,
-                        datasets: [{
-                            label: 'Total Inventaris',
-                            data: unitData,
-                            backgroundColor: '#4e73df'
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                ticks: {
-                                    precision: 0
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-
-            const conditionCanvas = document.getElementById('conditionChart');
-            if (conditionLabels.length) {
-                createOrUpdateChart('condition', conditionCanvas, {
-                    type: 'doughnut',
-                    data: {
-                        labels: conditionLabels,
-                        datasets: [{
-                            data: conditionData,
-                            backgroundColor: ['#1cc88a', '#e74a3b', '#f6c23e', '#858796']
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                position: 'bottom'
-                            }
-                        }
-                    }
-                });
-            }
-
-            const mutasiBulananCanvas = document.getElementById('mutasiBulananChart');
-            if (mutasiBulananLabels.length) {
-                createOrUpdateChart('mutasiBulanan', mutasiBulananCanvas, {
-                    type: 'line',
-                    data: {
-                        labels: mutasiBulananLabels,
-                        datasets: [
-                            {
-                                label: 'Mutasi',
-                                data: mutasiBulananData.mutasi,
-                                borderColor: '#4e73df',
-                                backgroundColor: 'rgba(78, 115, 223, 0.2)',
-                                tension: 0.3,
-                                fill: true
-                            },
-                            {
-                                label: 'Penghapusan',
-                                data: mutasiBulananData.penghapusan,
-                                borderColor: '#e74a3b',
-                                backgroundColor: 'rgba(231, 74, 59, 0.2)',
-                                tension: 0.3,
-                                fill: true
-                            }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                ticks: {
-                                    precision: 0
-                                }
-                            }
-                        }
-                    }
-                });
-            }
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return null;
         }
-    });
-
-    <?php if ($showAlert && $data_level === 'admin') : ?>
-    function getCookie(name) {
-        const value = `; ${document.cookie}`;
-        const parts = value.split(`; ${name}=`);
-        if (parts.length === 2) return parts.pop().split(';').shift();
-        return null;
-    }
     <?php endif; ?>
 </script>
 </body>
