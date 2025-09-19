@@ -542,6 +542,7 @@ foreach ($maintenanceNotifications as $notification) {
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <!-- Chart.js -->
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 
 <!-- Custom scripts for all pages-->
@@ -585,31 +586,144 @@ foreach ($maintenanceNotifications as $notification) {
                         popup: 'animated fadeInDown faster',
                         content: 'text-left'
                     },
-                    didOpen: () => {
-                        const confirmButton = Swal.getConfirmButton();
-                        const cancelButton = Swal.getCancelButton();
-                        const denyButton = Swal.getDenyButton();
-
-                        confirmButton.onclick = () => {
-                            window.location.href = 'peminjaman_barang.php';
-                        };
-
-                        denyButton.onclick = () => {
-                            const oneHourLater = now + (60 * 60 * 1000);
-                            document.cookie = "hidePeminjamanAlert=" + oneHourLater + "; path=/; max-age=" + (60 * 60);
-                            Swal.close();
-                        };
+                    options: {
+                        maintainAspectRatio: false,
+                        scales: {
+                            xAxes: [{
+                                gridLines: {
+                                    display: false,
+                                    drawBorder: false
+                                },
+                                ticks: {
+                                    autoSkip: false
+                                }
+                            }],
+                            yAxes: [{
+                                ticks: {
+                                    beginAtZero: true,
+                                    precision: 0
+                                },
+                                gridLines: {
+                                    color: 'rgba(234, 236, 244, 1)',
+                                    zeroLineColor: 'rgba(234, 236, 244, 1)',
+                                    drawBorder: false,
+                                    borderDash: [2],
+                                    zeroLineBorderDash: [2]
+                                }
+                            }]
+                        },
+                        legend: {
+                            display: false
+                        }
                     }
                 });
             }
-        });
 
-        function getCookie(name) {
-            const value = `; ${document.cookie}`;
-            const parts = value.split(`; ${name}=`);
-            if (parts.length === 2) return parts.pop().split(';').shift();
-            return null;
+            const conditionCanvas = document.getElementById('conditionChart');
+            if (conditionCanvas && conditionLabels.length) {
+                createOrUpdateChart('condition', conditionCanvas, {
+                    type: 'doughnut',
+                    data: {
+                        labels: conditionLabels,
+                        datasets: [{
+                            data: conditionData,
+                            backgroundColor: ['#1cc88a', '#e74a3b', '#f6c23e', '#858796'],
+                            hoverBackgroundColor: ['#17a673', '#be2617', '#dda20a', '#6c757d']
+                        }]
+                    },
+                    options: {
+                        maintainAspectRatio: false,
+                        legend: {
+                            position: 'bottom'
+                        },
+                        tooltips: {
+                            callbacks: {
+                                label: function (tooltipItem, data) {
+                                    const dataset = data.datasets[tooltipItem.datasetIndex];
+                                    const value = dataset.data[tooltipItem.index];
+                                    const label = data.labels[tooltipItem.index] || '';
+                                    return `${label}: ${value}`;
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            const mutasiBulananCanvas = document.getElementById('mutasiBulananChart');
+            if (mutasiBulananCanvas && mutasiBulananLabels.length) {
+                createOrUpdateChart('mutasiBulanan', mutasiBulananCanvas, {
+                    type: 'line',
+                    data: {
+                        labels: mutasiBulananLabels,
+                        datasets: [
+                            {
+                                label: 'Mutasi',
+                                data: mutasiBulananData.mutasi,
+                                borderColor: '#4e73df',
+                                backgroundColor: 'rgba(78, 115, 223, 0.2)',
+                                lineTension: 0.3,
+                                pointBackgroundColor: '#4e73df',
+                                pointBorderColor: '#4e73df',
+                                fill: true
+                            },
+                            {
+                                label: 'Penghapusan',
+                                data: mutasiBulananData.penghapusan,
+                                borderColor: '#e74a3b',
+                                backgroundColor: 'rgba(231, 74, 59, 0.2)',
+                                lineTension: 0.3,
+                                pointBackgroundColor: '#e74a3b',
+                                pointBorderColor: '#e74a3b',
+                                fill: true
+                            }
+                        ]
+                    },
+                    options: {
+                        maintainAspectRatio: false,
+                        scales: {
+                            xAxes: [{
+                                gridLines: {
+                                    display: false,
+                                    drawBorder: false
+                                }
+                            }],
+                            yAxes: [{
+                                ticks: {
+                                    beginAtZero: true,
+                                    precision: 0
+                                },
+                                gridLines: {
+                                    color: 'rgba(234, 236, 244, 1)',
+                                    zeroLineColor: 'rgba(234, 236, 244, 1)',
+                                    drawBorder: false,
+                                    borderDash: [2],
+                                    zeroLineBorderDash: [2]
+                                }
+                            }]
+                        },
+                        legend: {
+                            display: true
+                        }
+                    }
+                });
+            }
+        };
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeDashboard);
+        } else {
+            initializeDashboard();
         }
+    })();
+
+    <?php if ($showAlert && $data_level === 'admin') : ?>
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return null;
+    }
     <?php endif; ?>
 </script>
 </body>
