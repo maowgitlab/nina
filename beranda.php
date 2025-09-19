@@ -30,6 +30,160 @@ $kendaraanCount = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as tot
 $mutasiCount = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM mutasi_barang"))['total'] ?? 0;
 $peminjamanCount = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM peminjaman WHERE status = 'dipinjam'"))['total'] ?? 0;
 
+// Statistik total inventaris barang per ruangan/unit
+$unitStatistics = [];
+$unitStatsQuery = "SELECT r.nama_ruangan AS unit, SUM(COALESCE(CAST(ib.jumlah AS SIGNED), 0)) AS total_inventaris
+                    FROM inventaris_barang ib
+                    JOIN ruangan r ON ib.id_ruangan = r.id_ruangan
+                    GROUP BY r.id_ruangan, r.nama_ruangan
+                    ORDER BY total_inventaris DESC";
+$unitStatsResult = mysqli_query($conn, $unitStatsQuery);
+if ($unitStatsResult) {
+    while ($row = mysqli_fetch_assoc($unitStatsResult)) {
+        $unitStatistics[] = [
+            'unit' => $row['unit'],
+            'total' => (int) $row['total_inventaris']
+        ];
+    }
+}
+
+// Grafik kondisi barang berdasarkan status inventaris
+$conditionStats = [];
+$conditionQuery = "SELECT CASE COALESCE(ib.status, '')
+                            WHEN 'Y' THEN 'Baik'
+                            WHEN 'N' THEN 'Rusak Berat'
+                            WHEN 'P' THEN 'Perlu Perbaikan'
+                            ELSE 'Belum Ditentukan'
+                        END AS kondisi,
+                        SUM(COALESCE(CAST(ib.jumlah AS SIGNED), 0)) AS total_barang
+                   FROM inventaris_barang ib
+                   GROUP BY kondisi";
+$conditionResult = mysqli_query($conn, $conditionQuery);
+if ($conditionResult) {
+    while ($row = mysqli_fetch_assoc($conditionResult)) {
+        $conditionStats[] = [
+            'kondisi' => $row['kondisi'],
+            'total' => (int) $row['total_barang']
+        ];
+    }
+}
+
+// Reminder servis barang - hitung dari riwayat pemeliharaan dan jadwal berikutnya (6 bulan)
+$maintenanceReminders = [];
+$reminderQuery = "SELECT ib.id_barang, b.nama_barang, r.nama_ruangan,
+                         MAX(STR_TO_DATE(pb.tanggal, '%Y-%m-%d')) AS last_service
+                  FROM inventaris_barang ib
+                  JOIN barang b ON ib.id_barang = b.id_barang
+                  JOIN ruangan r ON ib.id_ruangan = r.id_ruangan
+                  LEFT JOIN pemeliharaan_barang pb
+                        ON pb.id_barang = ib.id_barang AND pb.id_ruangan = ib.id_ruangan
+                  GROUP BY ib.id_barang, ib.id_ruangan, b.nama_barang, r.nama_ruangan";
+$reminderResult = mysqli_query($conn, $reminderQuery);
+if ($reminderResult) {
+    $today = new DateTime();
+    while ($row = mysqli_fetch_assoc($reminderResult)) {
+        $lastServiceRaw = $row['last_service'];
+        $lastService = $lastServiceRaw ? new DateTime($lastServiceRaw) : null;
+        $nextService = $lastService ? clone $lastService : new DateTime();
+        if ($lastService) {
+            $nextService->modify('+6 months');
+        }
+        $intervalDays = (int) $today->diff($nextService)->format('%r%a');
+        $isOverdue = $nextService < $today;
+
+        // Tampilkan pengingat jika belum pernah diservis atau servis berikutnya jatuh tempo <= 30 hari
+        if (!$lastService || $isOverdue || $intervalDays <= 30) {
+            $maintenanceReminders[] = [
+                'barang' => $row['nama_barang'],
+                'unit' => $row['nama_ruangan'],
+                'last_service' => $lastService ? $lastService->format('d/m/Y') : 'Belum ada riwayat',
+                'next_service' => $nextService->format('d/m/Y'),
+                'status' => $isOverdue ? 'overdue' : ($lastService ? 'upcoming' : 'overdue'),
+                'days_remaining' => $isOverdue ? 0 : max($intervalDays, 0)
+            ];
+        }
+    }
+    // Urutkan agar yang overdue tampil di atas
+    usort($maintenanceReminders, function ($a, $b) {
+        if ($a['status'] === $b['status']) {
+            return $a['days_remaining'] <=> $b['days_remaining'];
+        }
+        return $a['status'] === 'overdue' ? -1 : 1;
+    });
+}
+
+// Rekap mutasi dan penghapusan bulanan
+$mutasiRekapBulanan = [];
+$rekapBulananQuery = "SELECT DATE_FORMAT(bam.tanggal_berita, '%Y-%m') AS periode,
+                             DATE_FORMAT(bam.tanggal_berita, '%M %Y') AS label,
+                             SUM(CASE WHEN mb.status = 'mutasi' THEN 1 ELSE 0 END) AS total_mutasi,
+                             SUM(CASE WHEN mb.status = 'penghapusan' THEN 1 ELSE 0 END) AS total_penghapusan
+                      FROM mutasi_barang mb
+                      LEFT JOIN berita_acara_mutasi bam ON bam.id_mutasi = mb.id_mutasi
+                      WHERE bam.tanggal_berita IS NOT NULL
+                      GROUP BY periode, label
+                      ORDER BY periode DESC
+                      LIMIT 12";
+$rekapBulananResult = mysqli_query($conn, $rekapBulananQuery);
+if ($rekapBulananResult) {
+    while ($row = mysqli_fetch_assoc($rekapBulananResult)) {
+        $mutasiRekapBulanan[] = [
+            'label' => $row['label'],
+            'mutasi' => (int) $row['total_mutasi'],
+            'penghapusan' => (int) $row['total_penghapusan']
+        ];
+    }
+    $mutasiRekapBulanan = array_reverse($mutasiRekapBulanan);
+}
+
+// Rekap mutasi dan penghapusan tahunan
+$mutasiRekapTahunan = [];
+$rekapTahunanQuery = "SELECT YEAR(bam.tanggal_berita) AS tahun,
+                             SUM(CASE WHEN mb.status = 'mutasi' THEN 1 ELSE 0 END) AS total_mutasi,
+                             SUM(CASE WHEN mb.status = 'penghapusan' THEN 1 ELSE 0 END) AS total_penghapusan
+                      FROM mutasi_barang mb
+                      LEFT JOIN berita_acara_mutasi bam ON bam.id_mutasi = mb.id_mutasi
+                      WHERE bam.tanggal_berita IS NOT NULL
+                      GROUP BY tahun
+                      ORDER BY tahun DESC
+                      LIMIT 5";
+$rekapTahunanResult = mysqli_query($conn, $rekapTahunanQuery);
+if ($rekapTahunanResult) {
+    while ($row = mysqli_fetch_assoc($rekapTahunanResult)) {
+        $mutasiRekapTahunan[] = [
+            'tahun' => (int) $row['tahun'],
+            'mutasi' => (int) $row['total_mutasi'],
+            'penghapusan' => (int) $row['total_penghapusan']
+        ];
+    }
+    $mutasiRekapTahunan = array_reverse($mutasiRekapTahunan);
+}
+
+$unitChartLabels = array_column($unitStatistics, 'unit');
+$unitChartValues = array_map(static function ($item) {
+    return (int) $item['total'];
+}, $unitStatistics);
+$conditionChartLabels = array_column($conditionStats, 'kondisi');
+$conditionChartValues = array_map(static function ($item) {
+    return (int) $item['total'];
+}, $conditionStats);
+$mutasiBulananLabels = array_column($mutasiRekapBulanan, 'label');
+$mutasiBulananMutasi = array_map(static function ($item) {
+    return (int) $item['mutasi'];
+}, $mutasiRekapBulanan);
+$mutasiBulananPenghapusan = array_map(static function ($item) {
+    return (int) $item['penghapusan'];
+}, $mutasiRekapBulanan);
+$mutasiTahunanLabels = array_map(static function ($item) {
+    return (string) $item['tahun'];
+}, $mutasiRekapTahunan);
+$mutasiTahunanMutasi = array_map(static function ($item) {
+    return (int) $item['mutasi'];
+}, $mutasiRekapTahunan);
+$mutasiTahunanPenghapusan = array_map(static function ($item) {
+    return (int) $item['penghapusan'];
+}, $mutasiRekapTahunan);
+
 // Notifikasi perawatan/maintenance barang
 $maintenanceNotifications = [];
 $maintenanceQuery = "SELECT pb.id_pemeliharaan, pb.tanggal, pb.keterangan, b.nama_barang, r.nama_ruangan,
@@ -204,6 +358,136 @@ foreach ($maintenanceNotifications as $notification) {
             </div>
         </div>
     </div>
+
+    <!-- Statistik Inventaris dan Kondisi Barang -->
+    <div class="row">
+        <div class="col-lg-6 mb-4">
+            <div class="card shadow h-100">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="m-0 font-weight-bold text-primary">Inventaris per Bidang / Unit</h6>
+                </div>
+                <div class="card-body">
+                    <?php if (!empty($unitStatistics)) : ?>
+                        <canvas id="unitDistributionChart" height="180"></canvas>
+                        <div class="mt-3">
+                            <h6 class="font-weight-bold text-secondary">5 Unit Teratas</h6>
+                            <ul class="list-group list-group-flush">
+                                <?php foreach (array_slice($unitStatistics, 0, 5) as $stat) : ?>
+                                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                        <span><?= htmlspecialchars($stat['unit'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                        <span class="badge badge-primary badge-pill"><?= number_format($stat['total'], 0, ',', '.'); ?> Item</span>
+                                    </li>
+                                <?php endforeach; ?>
+                            </ul>
+                        </div>
+                    <?php else : ?>
+                        <p class="text-muted mb-0">Belum ada data inventaris untuk ditampilkan.</p>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6 mb-4">
+            <div class="card shadow h-100">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="m-0 font-weight-bold text-primary">Kondisi Barang</h6>
+                </div>
+                <div class="card-body">
+                    <?php if (!empty($conditionStats)) : ?>
+                        <canvas id="conditionChart" height="180"></canvas>
+                        <div class="mt-3">
+                            <div class="d-flex flex-wrap">
+                                <?php foreach ($conditionStats as $stat) : ?>
+                                    <div class="mr-4 mb-2">
+                                        <span class="font-weight-bold text-dark"><?= htmlspecialchars($stat['kondisi'], ENT_QUOTES, 'UTF-8'); ?>:</span>
+                                        <span><?= number_format($stat['total'], 0, ',', '.'); ?> Item</span>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    <?php else : ?>
+                        <p class="text-muted mb-0">Belum ada data kondisi barang yang tercatat.</p>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reminder Servis dan Rekap Mutasi/Penghapusan -->
+    <div class="row">
+        <div class="col-xl-4 col-lg-5 mb-4">
+            <div class="card shadow h-100">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="m-0 font-weight-bold text-primary">Reminder Servis Barang</h6>
+                    <span class="badge badge-info badge-pill"><?= count($maintenanceReminders); ?></span>
+                </div>
+                <div class="card-body">
+                    <?php if (!empty($maintenanceReminders)) : ?>
+                        <div class="list-group list-group-flush">
+                            <?php foreach (array_slice($maintenanceReminders, 0, 6) as $reminder) : ?>
+                                <div class="list-group-item px-0">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div>
+                                            <h6 class="font-weight-bold mb-1 text-dark"><?= htmlspecialchars($reminder['barang'], ENT_QUOTES, 'UTF-8'); ?></h6>
+                                            <p class="mb-1 text-muted small">Lokasi: <?= htmlspecialchars($reminder['unit'], ENT_QUOTES, 'UTF-8'); ?></p>
+                                            <p class="mb-0 small">Terakhir servis: <strong><?= htmlspecialchars($reminder['last_service'], ENT_QUOTES, 'UTF-8'); ?></strong></p>
+                                            <p class="mb-0 small">Jadwal berikutnya: <strong><?= htmlspecialchars($reminder['next_service'], ENT_QUOTES, 'UTF-8'); ?></strong></p>
+                                        </div>
+                                        <span class="badge badge-<?= $reminder['status'] === 'overdue' ? 'danger' : 'warning'; ?> text-uppercase"><?= $reminder['status'] === 'overdue' ? 'Perlu segera' : 'Mendatang'; ?></span>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <?php if (count($maintenanceReminders) > 6) : ?>
+                            <p class="mt-3 mb-0 text-muted small">Ada <?= count($maintenanceReminders) - 6; ?> item lain yang juga perlu diperhatikan.</p>
+                        <?php endif; ?>
+                    <?php else : ?>
+                        <p class="text-muted mb-0">Tidak ada pengingat servis dalam 30 hari ke depan.</p>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-8 col-lg-7 mb-4">
+            <div class="card shadow h-100">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">Rekap Mutasi & Penghapusan</h6>
+                </div>
+                <div class="card-body">
+                    <?php if (!empty($mutasiRekapBulanan)) : ?>
+                        <h6 class="font-weight-bold text-secondary">Perkembangan Bulanan</h6>
+                        <canvas id="mutasiBulananChart" height="200"></canvas>
+                    <?php else : ?>
+                        <p class="text-muted">Belum ada data mutasi untuk periode bulan berjalan.</p>
+                    <?php endif; ?>
+                    <hr>
+                    <h6 class="font-weight-bold text-secondary">Ringkasan Tahunan</h6>
+                    <?php if (!empty($mutasiRekapTahunan)) : ?>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered mb-0">
+                                <thead class="thead-light">
+                                    <tr>
+                                        <th>Tahun</th>
+                                        <th>Mutasi</th>
+                                        <th>Penghapusan</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($mutasiRekapTahunan as $rekap) : ?>
+                                        <tr>
+                                            <td><?= htmlspecialchars($rekap['tahun'], ENT_QUOTES, 'UTF-8'); ?></td>
+                                            <td><?= number_format($rekap['mutasi'], 0, ',', '.'); ?></td>
+                                            <td><?= number_format($rekap['penghapusan'], 0, ',', '.'); ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php else : ?>
+                        <p class="text-muted mb-0">Belum ada data tahunan untuk ditampilkan.</p>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 <!-- /.container-fluid -->
 </div>
@@ -257,6 +541,9 @@ foreach ($maintenanceNotifications as $notification) {
 <!-- SweetAlert2 -->
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
 <!-- Custom scripts for all pages-->
 <script src="js/sb-admin-2.min.js"></script>
 
@@ -274,8 +561,8 @@ foreach ($maintenanceNotifications as $notification) {
 </style>
 
 <script>
-    <?php if ($showAlert && $data_level === 'admin') : ?>
-        document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function() {
+        <?php if ($showAlert && $data_level === 'admin') : ?>
             const hideAlert = getCookie('hidePeminjamanAlert');
             const now = new Date().getTime();
             if (!hideAlert || now > parseInt(hideAlert)) {
@@ -315,14 +602,123 @@ foreach ($maintenanceNotifications as $notification) {
                     }
                 });
             }
-        });
+        <?php endif; ?>
 
-        function getCookie(name) {
-            const value = `; ${document.cookie}`;
-            const parts = value.split(`; ${name}=`);
-            if (parts.length === 2) return parts.pop().split(';').shift();
-            return null;
+        const unitLabels = <?php echo json_encode($unitChartLabels, JSON_UNESCAPED_UNICODE); ?>;
+        const unitData = <?php echo json_encode($unitChartValues); ?>;
+        const conditionLabels = <?php echo json_encode($conditionChartLabels, JSON_UNESCAPED_UNICODE); ?>;
+        const conditionData = <?php echo json_encode($conditionChartValues); ?>;
+        const mutasiBulananLabels = <?php echo json_encode($mutasiBulananLabels, JSON_UNESCAPED_UNICODE); ?>;
+        const mutasiBulananData = {
+            mutasi: <?php echo json_encode($mutasiBulananMutasi); ?>,
+            penghapusan: <?php echo json_encode($mutasiBulananPenghapusan); ?>
+        };
+        const mutasiTahunanLabels = <?php echo json_encode($mutasiTahunanLabels, JSON_UNESCAPED_UNICODE); ?>;
+        const mutasiTahunanData = {
+            mutasi: <?php echo json_encode($mutasiTahunanMutasi); ?>,
+            penghapusan: <?php echo json_encode($mutasiTahunanPenghapusan); ?>
+        };
+
+        if (typeof Chart !== 'undefined') {
+            const unitCtx = document.getElementById('unitDistributionChart');
+            if (unitCtx && unitLabels.length) {
+                new Chart(unitCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: unitLabels,
+                        datasets: [{
+                            label: 'Total Inventaris',
+                            data: unitData,
+                            backgroundColor: '#4e73df'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    precision: 0
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            const conditionCtx = document.getElementById('conditionChart');
+            if (conditionCtx && conditionLabels.length) {
+                new Chart(conditionCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: conditionLabels,
+                        datasets: [{
+                            data: conditionData,
+                            backgroundColor: ['#1cc88a', '#e74a3b', '#f6c23e', '#858796']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+            }
+
+            const mutasiBulananCtx = document.getElementById('mutasiBulananChart');
+            if (mutasiBulananCtx && mutasiBulananLabels.length) {
+                new Chart(mutasiBulananCtx, {
+                    type: 'line',
+                    data: {
+                        labels: mutasiBulananLabels,
+                        datasets: [
+                            {
+                                label: 'Mutasi',
+                                data: mutasiBulananData.mutasi,
+                                borderColor: '#4e73df',
+                                backgroundColor: 'rgba(78, 115, 223, 0.2)',
+                                tension: 0.3,
+                                fill: true
+                            },
+                            {
+                                label: 'Penghapusan',
+                                data: mutasiBulananData.penghapusan,
+                                borderColor: '#e74a3b',
+                                backgroundColor: 'rgba(231, 74, 59, 0.2)',
+                                tension: 0.3,
+                                fill: true
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    precision: 0
+                                }
+                            }
+                        }
+                    }
+                });
+            }
         }
+    });
+
+    <?php if ($showAlert && $data_level === 'admin') : ?>
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return null;
+    }
     <?php endif; ?>
 </script>
 </body>
